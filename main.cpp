@@ -1,32 +1,31 @@
 #include "list.h"
 
-int main() {
-
+int main(int, char** argv) {
     List list = {};
 
-    ListCtor(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(ListCtor(&list, argv[1]));
 
-    // ListDump(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 5, 0), ListDtor(&list));
 
-    InsertElement(&list, 5, 0);
-    ListDump(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 7, 1), ListDtor(&list));
 
-    // InsertElement(&list, 7, 1);
-    // ListDump(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 6, 1), ListDtor(&list));
 
-    // InsertElement(&list, 6, 1);
-    // ListDump(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 9, 2), ListDtor(&list));
 
-    // InsertElement(&list, 9, 2);
-    // ListDump(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 3, 0), ListDtor(&list));
 
-    // InsertElement(&list, 3, 0);
-    // ListDump(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 2), ListDtor(&list));
 
-    // DeleteElement(&list, 4);
-    // ListDump(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 1), ListDtor(&list));
 
-    ListDtor(&list);
+    LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 3), ListDtor(&list));
+
+    LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 4), ListDtor(&list));
+
+    LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 5), ListDtor(&list));
+
+    LIST_CHECK_AND_RETURN_ERRORS(ListDtor(&list));
 
     return 0;
 }
