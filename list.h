@@ -16,6 +16,9 @@ const int START_CAPACITY = 8;
 const int MAX_CAPACITY   = 1e9;
 const int MAX_LEN_NAME   = 100;
 const int REALLOC_COEFF  = 2;
+const int CNT_CANARIES   = 2;
+const int DEFAULT_POISON = 0XDED;
+
 
 typedef int type_t;
 
@@ -54,7 +57,8 @@ enum list_status {
     CLOSE_ERROR               = 1 << 12,
     EXECUTION_FAILED          = 1 << 13,
     NULL_POITER_ON_DUMP_FILE  = 1 << 14,
-    CAPACITY_IS_TOO_BIG       = 1 << 15
+    CAPACITY_IS_TOO_BIG       = 1 << 15,
+    CORRUPTED_CANARY          = 1 << 16
 };
 
 

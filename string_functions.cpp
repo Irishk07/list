@@ -27,3 +27,13 @@ void* my_recalloc(void* ptr, size_t new_size, size_t old_size) {
 
     return temp;
 }
+
+void InitWithPoisons(type_t* ptr, size_t size) { 
+    assert(ptr);
+    assert(size > 0);
+    assert(size < MAX_CAPACITY);
+
+    for (size_t i = 0; i < size; ++i) {
+        *(ptr + i) = DEFAULT_POISON;
+    }
+}

@@ -5,6 +5,7 @@
 
 #include "list.h"
 
+#include "canary.h"
 #include "string_functions.h"
 
 list_status ListCtor(List* list, const char* dump_filename) {
@@ -16,14 +17,18 @@ list_status ListCtor(List* list, const char* dump_filename) {
     list->free     = 1;
     list->num_dump = 0;
 
-    list->data = (type_t*)calloc((size_t)list->capacity, sizeof(type_t));
-    list->next = (type_t*)calloc((size_t)list->capacity, sizeof(type_t));
-    list->prev = (type_t*)calloc((size_t)list->capacity, sizeof(type_t));
+    list->data = (type_t*)calloc(RealSizeList(list->capacity, CNT_CANARIES), sizeof(type_t));
+    list->next = (type_t*)calloc((size_t)list->capacity + 1, sizeof(type_t)); // +1 because list->next[0] == head, not elem
+    list->prev = (type_t*)calloc((size_t)list->capacity + 1, sizeof(type_t)); // +1 because list->prev[0] == tail, not elem
 
     if (list->data == NULL || list->next == NULL || list->prev == NULL)
         LIST_CHECK_AND_RETURN_ERRORS(NOT_ENOUGH_MEMORY,     free(list->data);
                                                             free(list->next);
                                                             free(list->prev););
+
+    InitWithPoisons(list->data + OffsetDueCanaries(CNT_CANARIES), list->capacity);
+    SettingCanariesToBegin(list->data);
+    SettingCanariesToEnd(list->data, list->capacity);
 
     InitNextPrev(list);
 
@@ -34,18 +39,21 @@ list_status ListCtor(List* list, const char* dump_filename) {
                                                      free(list->prev););
     list->file = file;
 
-    LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
+    LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list),   free(list->data);
+                                                     free(list->next);
+                                                     free(list->prev);
+                                                     fclose(file););
 
     return SUCCESS;
 }
 
 void InitNextPrev(List* list) {
-    for (type_t i = (type_t)list->free; i < (type_t)list->capacity; ++i) {
+    for (type_t i = (type_t)list->free; i <= (type_t)list->capacity; ++i) {
         list->next[i] = i + 1;
         list->prev[i] = -1;
     }
 
-    list->next[list->capacity - 1] = 0;
+    list->next[list->capacity] = 0;
 }
 
 list_status ListVerify(List* list) {
@@ -63,13 +71,17 @@ list_status ListVerify(List* list) {
 
     if (list->free > list->capacity)    return INVALIDE_FREE;
 
+    if (list->file == NULL)             return NULL_POITER_ON_DUMP_FILE;
+
+    if (list->data[0] != CANARY ||
+        list->data[OffsetToNewElement(list->capacity, CNT_CANARIES)] != CANARY) return CORRUPTED_CANARY;
+
+
     if (list->next[0] < 0 ||
-        list->next[0] >= (type_t)list->capacity) return INVALIDE_HEAD;
+        list->next[0] >= (type_t)list->capacity)  return INVALIDE_HEAD;
 
     if (list->prev[0] < 0 ||
-        list->prev[0] >= (type_t)list->capacity) return INVALIDE_TAIL;
-
-    if (list->file == NULL)             return NULL_POITER_ON_DUMP_FILE;
+        list->prev[0] >= (type_t)list->capacity)  return INVALIDE_TAIL;
 
     return SUCCESS;
 } 
@@ -81,20 +93,18 @@ list_status InsertElement(List* list, type_t elem, size_t position) { // TODO re
     list->about_elem.position = position;
     list->about_elem.value    = elem;
 
-    if (list->size >= list->capacity - 1) { // -1 because data[0] isn't used for elements
+    if (list->size >= list->capacity) {
         size_t old_capacity = list->capacity;
         list->capacity *= REALLOC_COEFF;
 
+        list->free = OffsetToNewElement(list->size, CNT_CANARIES);
+
         LIST_CHECK_AND_RETURN_ERRORS(ListResize(list, old_capacity));
-
-        list->free = old_capacity;
-
-        InitNextPrev(list);
     }
     
     LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "Before", DUMP_INFO))
 
-    if (position >= list->capacity)
+    if (position > list->capacity)
         LIST_CHECK_AND_RETURN_ERRORS(INVALID_POSITION);
 
     list->data[list->free] = elem;
@@ -150,9 +160,10 @@ list_status InsertElement(List* list, type_t elem, size_t position) { // TODO re
 list_status ListResize(List* list, size_t old_capacity) {
     assert(list);
 
-    type_t* temp_data = (type_t*)my_recalloc(list->data, list->capacity * sizeof(type_t), old_capacity * sizeof(type_t));
-    type_t* temp_next = (type_t*)my_recalloc(list->next, list->capacity * sizeof(type_t), old_capacity * sizeof(type_t));
-    type_t* temp_prev = (type_t*)my_recalloc(list->prev, list->capacity * sizeof(type_t), old_capacity * sizeof(type_t));
+    type_t* temp_data = (type_t*)my_recalloc(list->data, RealSizeList(list->capacity, CNT_CANARIES) * sizeof(type_t), 
+                                                         RealSizeList(old_capacity, CNT_CANARIES) * sizeof(type_t));
+    type_t* temp_next = (type_t*)my_recalloc(list->next, (list->capacity + 1) * sizeof(type_t), old_capacity * sizeof(type_t)); // +1 because list->next[0] == head, not elem
+    type_t* temp_prev = (type_t*)my_recalloc(list->prev, (list->capacity + 1) * sizeof(type_t), old_capacity * sizeof(type_t)); // +1 because list->prev[0] == tail, not elem
 
     if (temp_data == NULL || temp_next == NULL || temp_prev == NULL) {
         LIST_CHECK_AND_RETURN_ERRORS(NOT_ENOUGH_MEMORY, free(temp_data); 
@@ -163,6 +174,10 @@ list_status ListResize(List* list, size_t old_capacity) {
     list->data = temp_data;
     list->next = temp_next;
     list->prev = temp_prev;
+
+    InitWithPoisons(list->data + OffsetToNewElement(list->size, CNT_CANARIES), list->capacity - list->size);
+    SettingCanariesToEnd(list->data, list->capacity);
+    InitNextPrev(list);
 
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
@@ -178,7 +193,7 @@ list_status DeleteElement(List* list, size_t position) {
 
     LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "Before", DUMP_INFO));
 
-    if (position >= list->capacity)
+    if (position > list->capacity)
         LIST_CHECK_AND_RETURN_ERRORS(INVALID_POSITION);
 
     if (list->size == 0 || list->prev[position] == -1)
@@ -233,34 +248,40 @@ list_status ListHTMLDump(List* list, const char* type_dump, int line, const char
 
     fprintf(list->file, "List {%s: %d}\n", file, line);
 
-    fprintf(list->file, "Capacity: %zu\n", list->capacity - 1);
+    fprintf(list->file, "Capacity: %zu\n", list->capacity);
     fprintf(list->file, "Size: %zu\n", list->size);
     fprintf(list->file, "Free: %zu\n", list->free);
 
     fprintf(list->file, "Indexes |");
 
-    for (size_t i = 1; i < list->capacity; ++i) {
-        fprintf(list->file, "%2zu | ", i);
+    fprintf(list->file, "    Service    | ");
+    for (size_t i = 1; i <= list->capacity; ++i) {
+        fprintf(list->file, "%4zu | ", i);
     }
-    fprintf(list->file, "\n");
+    fprintf(list->file, "   Service\n");
 
     fprintf(list->file, "Data    |");
-    for (size_t i = 1; i < list->capacity; ++i) {
-        fprintf(list->file, "%2d | ", list->data[i]);
+    fprintf(list->file, " %4d (Canary) | ", list->data[0]);
+    for (size_t i = 1; i <= list->capacity; ++i) {
+        fprintf(list->file, "%4d | ", list->data[i]);
     }
-    fprintf(list->file, "\n");
+    fprintf(list->file, "%4d (Canary)\n", list->data[list->capacity + 1]);
 
     fprintf(list->file, "Next    |");
-    for (size_t i = 1; i < list->capacity; ++i) {
-        fprintf(list->file, "%2d | ", list->next[i]);
+    fprintf(list->file, " %4d (Head)   | ", list->next[0]);
+    for (size_t i = 1; i <= list->capacity; ++i) {
+        fprintf(list->file, "%4d | ", list->next[i]);
     }
-    fprintf(list->file, "\n");
+    fprintf(list->file, "     -     \n");
 
     fprintf(list->file, "Prev    |");
-    for (size_t i = 1; i < list->capacity; ++i) {
-        fprintf(list->file, "%2d | ", list->prev[i]);
+    fprintf(list->file, " %4d (Tail)   | ", list->prev[0]);
+    for (size_t i = 1; i <= list->capacity; ++i) {
+        fprintf(list->file, "%4d | ", list->prev[i]);
     }
-    fprintf(list->file, "\n\n");
+    fprintf(list->file, "     -     \n");
+
+    fprintf(list->file, "\n");
 
     LIST_CHECK_AND_RETURN_ERRORS(GenerateGraph(list));
 
@@ -293,10 +314,10 @@ list_status GenerateGraph(List* list) {
     fprintf(graph, "    splines=ortho;\n");
     fprintf(graph, "    nodesep=0.5;\n");
 
-    fprintf(graph, "    node0 [shape = Mrecord; style = filled; fillcolor = \"#00FFFF\"; label = \"data[0] = %d | head = %d | tail = %d\"];\n",
+    fprintf(graph, "    node0 [shape = Mrecord; style = filled; fillcolor = \"#00FFFF\"; label = \"canary = %d | head = %d | tail = %d\"];\n",
                     list->data[0], list->next[0], list->prev[0]);
 
-    for (size_t i = 1; i < (size_t)list->capacity; ++i) {
+    for (size_t i = 1; i <= (size_t)list->capacity; ++i) {
         if (list->prev[i] != -1)
             fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = \"data = %d | next = %d | prev = %d\"];\n",
                     i, list->data[i], list->next[i], list->prev[i]);
@@ -305,7 +326,10 @@ list_status GenerateGraph(List* list) {
                     i, list->data[i], list->next[i], list->prev[i]);
     }
 
-    for (size_t i = 0; i < (size_t)list->capacity - 1; ++i) {
+    fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#00FFFF\"; label = \"canary = %d\"];\n",
+                    list->capacity + 1, list->data[list->capacity + 1]);
+
+    for (size_t i = 0; i < RealSizeList(list->capacity, CNT_CANARIES) - 1; ++i) {
         fprintf(graph, "    node%zu -> node%zu [style = invis];\n", i, i + 1);
     }
 
