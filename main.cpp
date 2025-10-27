@@ -14,8 +14,8 @@ int main(int, char** argv) {
     LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 9, 2), ListDtor(&list));
 
     LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 3, 0), ListDtor(&list));
-
-    LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 2), ListDtor(&list));
+    
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 10, 4), ListDtor(&list));
 
     LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 1), ListDtor(&list));
 
@@ -24,6 +24,8 @@ int main(int, char** argv) {
     LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 4), ListDtor(&list));
 
     LIST_CHECK_AND_RETURN_ERRORS(DeleteElement(&list, 5), ListDtor(&list));
+
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 9, 2), ListDtor(&list));
 
     LIST_CHECK_AND_RETURN_ERRORS(ListDtor(&list));
 

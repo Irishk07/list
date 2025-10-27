@@ -15,7 +15,7 @@ null,object-size,return,returns-nonnull-attribute,shift,signed-integer-overflow,
 
 CPPFLAGS += $(SANITIZER_FLAGS)
 
-CPPSRC := main.cpp list.cpp
+CPPSRC := main.cpp list.cpp string_functions.cpp
 
 CPPOBJ := $(CPPSRC:%.cpp=build/%.o) 
 
