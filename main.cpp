@@ -3,7 +3,7 @@
 int main(int, char** argv) {
     List list = {};
 
-    LIST_CHECK_AND_RETURN_ERRORS(ListCtor(&list, argv[1]));
+    LIST_CHECK_AND_RETURN_ERRORS(ListCtor(&list, argv[1], argv[2]));
 
     LIST_CHECK_AND_RETURN_ERRORS(InsertElement(&list, 5, 0), ListDtor(&list));
 

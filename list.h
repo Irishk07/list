@@ -35,6 +35,7 @@ struct List {
     size_t size;
     size_t capacity;
     FILE* file;
+    const char* directory;
     int num_dump;
     About_elem about_elem;
 };
@@ -58,11 +59,12 @@ enum list_status {
     EXECUTION_FAILED          = 1 << 13,
     NULL_POITER_ON_DUMP_FILE  = 1 << 14,
     CAPACITY_IS_TOO_BIG       = 1 << 15,
-    CORRUPTED_CANARY          = 1 << 16
+    CORRUPTED_CANARY          = 1 << 16,
+    LIST_DATA_POISON          = 1 << 17
 };
 
 
-list_status ListCtor(List* list, const char* dump_filename);
+list_status ListCtor(List* list, const char* dump_filename, const char* directory);
 
 void InitNextPrev(List* list);
 
@@ -75,6 +77,10 @@ list_status ListResize(List* list, size_t old_capacity);
 list_status DeleteElement(List* list, size_t position);
  
 list_status GetElement(List* list, size_t position, type_t* elem);
+
+type_t ListHead(List* list);
+
+type_t ListTail(List* list);
 
 list_status ListHTMLDump(List* list, const char* type_dump, int line, const char* func, const char* file);
 
