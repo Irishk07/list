@@ -268,7 +268,7 @@ list_status ListHTMLDump(List* list, const char* type_dump, int line, const char
     if (system((const char*)command) != 0)
         LIST_CHECK_AND_RETURN_ERRORS(EXECUTION_FAILED,      fprintf(list->file, "Error with create image:(\n"));
 
-    fprintf(list->file, "<img src = %s/image%d.png width = 500px>", list->directory, list->num_dump);
+    fprintf(list->file, "<img src = %s/image%d.png width = 1200px>", list->directory, list->num_dump);
 
     fprintf(list->file, "\n");
 
@@ -296,7 +296,13 @@ list_status GenerateGraph(List* list) {
                     list->data[0], list->next[0], list->prev[0]);
 
     for (size_t i = 1; i <= (size_t)list->capacity; ++i) {
-        if (list->prev[i] != -1)
+        if ((list->next[i] == 0 && list->prev[i] != -1))
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <data = %d | <FONT COLOR=\"Blue\">next = %d </FONT> | prev = %d>];\n",
+                    i, list->data[i], list->next[i], list->prev[i]);
+        else if (list->prev[i] == 0)
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <data = %d |next = %d |  <FONT COLOR=\"Red\">prev = %d</FONT>>];\n",
+                    i, list->data[i], list->next[i], list->prev[i]);
+        else if (list->prev[i] != -1)
             fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = \"data = %d | next = %d | prev = %d\"];\n",
                     i, list->data[i], list->next[i], list->prev[i]);
         else
@@ -311,29 +317,31 @@ list_status GenerateGraph(List* list) {
         fprintf(graph, "    node%zu -> node%zu [style = invis];\n", i, i + 1);
     }
 
-    for (type_t i = list->next[0]; list->next[i] != 0; i = list->next[i]) {
-        fprintf(graph, "    node%d -> node%d [constraint=false, color = blue];\n", i, list->next[i]);
+    for (type_t i = 0; list->next[i] != 0; i = list->next[i]) {
+        fprintf(graph, "    node%d -> node%d [constraint=false, color = blue, arrowhead = vee];\n", i, list->next[i]);
     }
+    fprintf(graph, "    node%d -> node0 [constraint=false, color = blue, arrowhead = vee];\n", list->prev[0]);
 
-    for (type_t i = list->prev[0]; list->prev[i] != 0; i = list->prev[i]) {
-        fprintf(graph, "    node%d -> node%d [constraint=false, color = red];\n", i, list->prev[i]);
+    for (type_t i = 0; list->prev[i] != 0; i = list->prev[i]) {
+        fprintf(graph, "    node%d -> node%d [constraint=false, color = red, arrowhead = vee];\n", i, list->prev[i]);
     }
+    fprintf(graph, "    node%d -> node0 [constraint=false, color = red, arrowhead = vee];\n", list->next[0]);
 
     for (type_t i = (type_t)list->free; list->next[i] != 0; i = list->next[i]) {
-        fprintf(graph, "    node%d -> node%d [constraint=false, color = purple];\n", i, list->next[i]);
+        fprintf(graph, "    node%d -> node%d [constraint=false, color = purple, arrowhead = vee];\n", i, list->next[i]);
     }
 
     fprintf(graph, "    node_head [shape = component, style = filled; fillcolor = \"#FFFF99\"; label = \"Head\"];\n");
-    fprintf(graph, "    {rank = same; node%d; node_head;}\n", list->next[0]);
-    fprintf(graph, "    node_head -> node%d [constraint=false, color = orange];\n", list->next[0]);
+    fprintf(graph, "    {rank = same; node_head; node%d;}\n", list->next[0]);
+    fprintf(graph, "    node_head -> node%d [constraint=false, color = orange, arrowhead = vee];\n", list->next[0]);
 
     fprintf(graph, "    node_tail [shape = component, style = filled; fillcolor = \"#FFFF99\"; label = \"Tail\"];\n");
-    fprintf(graph, "    {rank = same; node%d; node_tail;}\n", list->prev[0]);
-    fprintf(graph, "    node_tail -> node%d [constraint=false, color = orange];\n", list->prev[0]);
+    fprintf(graph, "    {rank = same; node_tail; node%d;}\n", list->prev[0]);
+    fprintf(graph, "    node_tail -> node%d [constraint=false, color = orange, arrowhead = vee];\n", list->prev[0]);
 
     fprintf(graph, "    node_free [shape = component, style = filled; fillcolor = \"#FFFF99\"; label = \"Free\"];\n");
-    fprintf(graph, "    {rank = same; node%zu; node_free;}\n", list->free);
-    fprintf(graph, "    node_free -> node%zu [constraint=false, color = orange];\n", list->free);
+    fprintf(graph, "    {rank = same; node_free; node%zu;}\n", list->free);
+    fprintf(graph, "    node_free -> node%zu [constraint=false, color = orange, arrowhead = vee];\n", list->free);
 
     fprintf(graph, "}");
 
