@@ -1,4 +1,5 @@
 list_prog
 build/
 dump1/
-dump.html
+tests/
+*.html

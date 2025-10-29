@@ -114,22 +114,45 @@ list_status ListVerify(List* list) {
 }
 
 // need insert element after physical_index
-list_status InsertElement(List* list, type_t elem, size_t physical_index) {
+list_status InsertElementAfter(List* list, type_t elem, size_t physical_index) {
+    About_elem about_elem = {.value = elem, .physical_index = physical_index};
+
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, about_elem, "Before", DUMP_INFO, INSERT_AFTER));
+
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElementAfterNoDump(list, elem, physical_index));
+
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, about_elem, "After", DUMP_INFO, INSERT_AFTER));
+
+    return SUCCESS;
+}
+
+// need insert element befort physical_index
+list_status InsertElementBefore(List* list, type_t elem, size_t physical_index) {
+    About_elem about_elem = {.value = elem, .physical_index = physical_index};
+
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, about_elem, "Before", DUMP_INFO, INSERT_BEFORE));
+
+    LIST_CHECK_AND_RETURN_ERRORS(InsertElementAfterNoDump(list, elem, (size_t)list->prev[physical_index]));
+
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, about_elem, "After", DUMP_INFO, INSERT_BEFORE));
+
+    return SUCCESS;
+}
+
+// need insert element after physical_index
+list_status InsertElementAfterNoDump(List* list, type_t elem, size_t physical_index) {
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
-    list->about_elem.physical_index = physical_index;
-    list->about_elem.value          = elem;
+    list->size++;
 
     if (list->size >= list->capacity) {
         size_t old_capacity = list->capacity;
         list->capacity *= REALLOC_COEFF;
 
-        list->free = list->size + 1;
+        list->free = list->size;
 
         LIST_CHECK_AND_RETURN_ERRORS(ListResize(list, old_capacity));
     }
-
-    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "Before", DUMP_INFO, INSERT))
 
     if (physical_index > list->capacity || list->prev[physical_index] == -1)
         LIST_CHECK_AND_RETURN_ERRORS(INVALID_POSITION);
@@ -144,10 +167,6 @@ list_status InsertElement(List* list, type_t elem, size_t physical_index) {
 
     list->next[current_free] = list->next[physical_index];
     list->next[physical_index] = current_free;
-
-    list->size++;
-
-    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "After", DUMP_INFO, INSERT));
 
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
@@ -189,12 +208,12 @@ list_status ListResize(List* list, size_t old_capacity) {
 list_status DeleteElement(List* list, size_t physical_index) {
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
-    list->about_elem.physical_index = physical_index;
-    LIST_CHECK_AND_RETURN_ERRORS(GetElement(list, physical_index, &list->about_elem.value));
+    About_elem about_elem = {.physical_index = physical_index};
+    LIST_CHECK_AND_RETURN_ERRORS(GetElement(list, physical_index, &about_elem.value));
 
-    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "Before", DUMP_INFO, DELETE));
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, about_elem, "Before", DUMP_INFO, DELETE));
 
-    if (physical_index > list->capacity)
+    if (physical_index > list->capacity || physical_index == 0)
         LIST_CHECK_AND_RETURN_ERRORS(INVALID_POSITION);
 
     if (list->size == 0 || list->prev[physical_index] == -1)
@@ -212,7 +231,7 @@ list_status DeleteElement(List* list, size_t physical_index) {
 
     list->size--;
 
-    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "After", DUMP_INFO, DELETE));
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, about_elem, "After", DUMP_INFO, DELETE));
 
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
@@ -241,15 +260,18 @@ type_t ListTail(List* list) {
     return list->prev[0];
 }
 
-list_status ListHTMLDump(List* list, const char* type_dump, int line, const char* file, function_name func_name) {
-    fprintf(list->dump_file, "<pre>\n");
+list_status ListHTMLDump(List* list, About_elem about_elem, const char* type_dump, int line, const char* file, function_name func_name) {
+    fprintf(list->dump_file, "<pre>\n <font size = \"6\">\n");
 
-    if (func_name == INSERT)
+    if (func_name == INSERT_AFTER)
         fprintf(list->dump_file, "<h3> DUMP <font color=green> %s Insert <%d> after physical_index [%zu] </font> </h3>\n",
-                type_dump, list->about_elem.value, list->about_elem.physical_index);
+                type_dump, about_elem.value, about_elem.physical_index);
+    else if (func_name == INSERT_BEFORE)
+        fprintf(list->dump_file, "<h3> DUMP <font color=green> %s Insert <%d> before physical_index [%zu] </font> </h3>\n",
+                type_dump, about_elem.value, about_elem.physical_index);
     else if (func_name == DELETE)
         fprintf(list->dump_file, "<h3> DUMP <font color=red> %s Delete <%d> from physical_index [%zu] </font> </h3>\n",
-                type_dump, list->about_elem.value, list->about_elem.physical_index);
+                type_dump, about_elem.value, about_elem.physical_index);
 
     fprintf(list->dump_file, "List {%s: %d}\n", file, line);
 
@@ -299,9 +321,15 @@ list_status ListHTMLDump(List* list, const char* type_dump, int line, const char
     if (system((const char*)command) != 0)
         LIST_CHECK_AND_RETURN_ERRORS(EXECUTION_FAILED,      fprintf(list->dump_file, "Error with create image:(\n"));
 
-    fprintf(list->dump_file, "<img src = %s/images/image%d.png width = 1200px>", list->directory, list->num_dump);
+    fprintf(list->dump_file, "<img src = %s/images/image%d.png width = 1500px>", list->directory, list->num_dump);
 
-    fprintf(list->dump_file, "\n");
+    fprintf(list->dump_file, "\n\n");
+
+    fprintf(list->dump_file, "Meow <3\n\n");
+
+    fprintf(list->dump_file, "<img src = cat.png width = 150px> </font>");
+
+    fprintf(list->dump_file, "\n\n");
 
     list->num_dump++;
 
@@ -321,22 +349,22 @@ list_status GenerateGraph(List* list) {
     fprintf(graph, "digraph {\n");
     fprintf(graph, "    splines=ortho;\n");
 
-    fprintf(graph, "    node0 [shape = Mrecord; style = filled; fillcolor = \"#00FFFF\"; label = \"{canary = %d | head = %d | tail = %d}\"];\n",
+    fprintf(graph, "    node0 [shape = Mrecord; style = filled; fillcolor = \"#00FFFF\"; label = \"{idx = 0 | canary = %d | head = %d | tail = %d}\"];\n",
                     list->data[0], list->next[0], list->prev[0]);
 
     for (size_t i = 1; i <= list->capacity; ++i) {
         if ((list->next[i] == 0 && list->prev[i] != -1))
-            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <{data = %d | <FONT COLOR=\"Blue\">next = %d </FONT> | prev = %d}>];\n",
-                    i, list->data[i], list->next[i], list->prev[i]);
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <{idx = %zu | data = %d | <FONT COLOR=\"Blue\">next = %d </FONT> | prev = %d}>];\n",
+                    i, i, list->data[i], list->next[i], list->prev[i]);
         else if (list->prev[i] == 0)
-            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <{data = %d |next = %d |  <FONT COLOR=\"Red\">prev = %d</FONT>}>];\n",
-                    i, list->data[i], list->next[i], list->prev[i]);
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <{idx = %zu | data = %d |next = %d |  <FONT COLOR=\"Red\">prev = %d</FONT>}>];\n",
+                    i, i, list->data[i], list->next[i], list->prev[i]);
         else if (list->prev[i] != -1)
-            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = \"{data = %d | next = %d | prev = %d}\"];\n",
-                    i, list->data[i], list->next[i], list->prev[i]);
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = \"{idx = %zu | data = %d | next = %d | prev = %d}\"];\n",
+                    i, i, list->data[i], list->next[i], list->prev[i]);
         else
-            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#9999FF\"; label = \"{data = %d | next = %d | prev = %d}\"];\n",
-                    i, list->data[i], list->next[i], list->prev[i]);
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#9999FF\"; label = \"{idx = %zu | data = %d | next = %d | prev = %d}\"];\n",
+                    i, i, list->data[i], list->next[i], list->prev[i]);
     }
 
     fprintf(graph, "    {rank = same; ");

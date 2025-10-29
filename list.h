@@ -36,7 +36,6 @@ struct List {
     FILE* dump_file;
     const char* directory;
     int num_dump;
-    About_elem about_elem; // FIXME
 };
 
 
@@ -60,12 +59,14 @@ enum list_status {
     CAPACITY_IS_TOO_BIG       = 1 << 15,
     CORRUPTED_CANARY          = 1 << 16,
     LIST_DATA_POISON          = 1 << 17,
-    LIST_HAS_CYCLE            = 1 << 18
+    LIST_HAS_CYCLE            = 1 << 18,
+    TEST_ERROR                = 1 << 19
 };
 
 enum function_name {
-    INSERT = 0,
-    DELETE = 1
+    INSERT_AFTER  = 0,
+    DELETE        = 1,
+    INSERT_BEFORE = 2
 };
 
 
@@ -75,7 +76,11 @@ void InitFreeSpace(List* list);
 
 list_status ListVerify(List* list);
 
-list_status InsertElement(List* list, type_t elem, size_t physical_index);
+list_status InsertElementAfter(List* list, type_t elem, size_t physical_index);
+
+list_status InsertElementBefore(List* list, type_t elem, size_t physical_index);
+
+list_status InsertElementAfterNoDump(List* list, type_t elem, size_t physical_index);
 
 list_status ListResize(List* list, size_t old_capacity);
 
@@ -87,7 +92,7 @@ type_t ListHead(List* list);
 
 type_t ListTail(List* list);
 
-list_status ListHTMLDump(List* list, const char* type_dump, int line, const char* file, function_name func_name);
+list_status ListHTMLDump(List* list, About_elem about_elem, const char* type_dump, int line, const char* file, function_name func_name);
 
 list_status GenerateGraph(List* list);
 
