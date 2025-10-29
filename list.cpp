@@ -19,39 +19,47 @@ list_status ListCtor(List* list, const char* dump_filename, const char* director
     list->num_dump = 0;
     list->directory = directory;
 
-    list->data = (type_t*)calloc(RealSizeList(list->capacity, CNT_CANARIES), sizeof(type_t));
-    list->next = (type_t*)calloc((size_t)list->capacity + 1, sizeof(type_t)); // +1 because list->next[0] == head, not elem
-    list->prev = (type_t*)calloc((size_t)list->capacity + 1, sizeof(type_t)); // +1 because list->prev[0] == tail, not elem
+    // TODO prev and next are indexes, not type_t
+    list->data = (type_t*)calloc(RealSizeList(list->capacity + 1, CNT_CANARIES), sizeof(type_t)); // +1 because list->data[0] is not elem
+    list->next = (int*)calloc(list->capacity + 1, sizeof(int)); // +1 because list->next[0] == head, not elem
+    list->prev = (int*)calloc(list->capacity + 1, sizeof(int)); // +1 because list->prev[0] == tail, not elem
 
     if (list->data == NULL || list->next == NULL || list->prev == NULL)
         LIST_CHECK_AND_RETURN_ERRORS(NOT_ENOUGH_MEMORY,     free(list->data);
                                                             free(list->next);
                                                             free(list->prev););
 
-    InitWithPoisons(list->data + OffsetDueCanaries(CNT_CANARIES), list->capacity);
-    SettingCanariesToBegin(list->data);
-    SettingCanariesToEnd(list->data, list->capacity);
+    InitFreeSpace(list);
+    list->data[0] = DEFAULT_POISON;
 
-    InitNextPrev(list);
+    ON_CANARY(
+        SettingCanariesToBegin(list->data);
+        SettingCanariesToEnd(list->data, list->capacity);
+    )
 
-    FILE* file = fopen(dump_filename, "w");
-    if (file == NULL)
+
+    FILE* dump_file = fopen(dump_filename, "w");
+    if (dump_file == NULL)
         LIST_CHECK_AND_RETURN_ERRORS(OPEN_ERROR,     free(list->data);
                                                      free(list->next);
                                                      free(list->prev););
-    list->file = file;
+    list->dump_file = dump_file;
 
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list),   free(list->data);
                                                      free(list->next);
                                                      free(list->prev);
-                                                     fclose(file););
+                                                     fclose(dump_file););
 
     return SUCCESS;
 }
 
-void InitNextPrev(List* list) {
-    for (type_t i = (type_t)list->free; i <= (type_t)list->capacity; ++i) {
-        list->next[i] = i + 1;
+void InitFreeSpace(List* list) {
+    for (size_t i = list->size + 1; i <= list->capacity; ++i) { // +1 because list->data[0] is not elem 
+        list->data[i] = DEFAULT_POISON;
+    }
+
+    for (size_t i = list->free; i <= list->capacity; ++i) {
+        list->next[i] = (int)i + 1;
         list->prev[i] = -1;
     }
 
@@ -73,14 +81,27 @@ list_status ListVerify(List* list) {
 
     if (list->free > list->capacity)    return INVALIDE_FREE;
 
-    if (list->file == NULL)             return NULL_POITER_ON_DUMP_FILE;
+    if (list->dump_file == NULL)        return NULL_POITER_ON_DUMP_FILE;
 
-    if (list->data[0] != CANARY ||
-        list->data[OffsetToNewElement(list->capacity, CNT_CANARIES)] != CANARY) return CORRUPTED_CANARY;
+    ON_CANARY(
+        if (list->data[0] != CANARY ||
+            list->data[OffsetToNewElement(list->capacity, CNT_CANARIES)] != CANARY) return CORRUPTED_CANARY;
+    )
 
-    for (size_t i = list->free; list->next[i] != 0; i = (size_t)list->next[i]) {
+    size_t cnt = 0;
+    for (int i = ListHead(list); list->next[i] != 0; i = list->next[i], ++cnt) {
+        if (cnt > list->size)           return LIST_HAS_CYCLE;
+
+        if (list->data[i] == DEFAULT_POISON ||
+            list->prev[i] == -1)        return LIST_DATA_POISON;
+    }
+
+    cnt = 0;
+    for (size_t i = list->free; list->next[i] != 0; i = (size_t)list->next[i], ++cnt) {
+        if (cnt > list->capacity - list->size) return LIST_HAS_CYCLE;
+
         if (list->data[i] != DEFAULT_POISON ||
-            list->prev[i] != -1)        return LIST_DATA_POISON;
+            list->prev[i] != -1)               return LIST_DATA_POISON;
     }
 
     if (ListHead(list) < 0 ||
@@ -92,23 +113,25 @@ list_status ListVerify(List* list) {
     return SUCCESS;
 }
 
-// need insert element after position
-list_status InsertElement(List* list, type_t elem, size_t position) { // TODO rename position maybe
+// need insert element after physical_index
+list_status InsertElement(List* list, type_t elem, size_t physical_index) {
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
-    list->about_elem.position = position;
-    list->about_elem.value    = elem;
+    list->about_elem.physical_index = physical_index;
+    list->about_elem.value          = elem;
 
     if (list->size >= list->capacity) {
         size_t old_capacity = list->capacity;
         list->capacity *= REALLOC_COEFF;
 
+        list->free = list->size + 1;
+
         LIST_CHECK_AND_RETURN_ERRORS(ListResize(list, old_capacity));
     }
 
-    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "Before", DUMP_INFO))
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "Before", DUMP_INFO, INSERT))
 
-    if (position > list->capacity || position > list->size)
+    if (physical_index > list->capacity || list->prev[physical_index] == -1)
         LIST_CHECK_AND_RETURN_ERRORS(INVALID_POSITION);
 
     list->data[list->free] = elem;
@@ -116,15 +139,15 @@ list_status InsertElement(List* list, type_t elem, size_t position) { // TODO re
     type_t current_free = (type_t)list->free;
     list->free = (size_t)list->next[list->free];
 
-    list->prev[list->next[position]] = current_free;
-    list->prev[current_free] = (type_t)position;
+    list->prev[list->next[physical_index]] = current_free;
+    list->prev[current_free] = (type_t)physical_index;
 
-    list->next[current_free] = list->next[position];
-    list->next[position] = current_free;
+    list->next[current_free] = list->next[physical_index];
+    list->next[physical_index] = current_free;
 
     list->size++;
 
-    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "After", DUMP_INFO));
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "After", DUMP_INFO, INSERT));
 
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
@@ -134,12 +157,14 @@ list_status InsertElement(List* list, type_t elem, size_t position) { // TODO re
 list_status ListResize(List* list, size_t old_capacity) {
     assert(list);
 
-    list->free = OffsetToNewElement(list->size, CNT_CANARIES);
+    type_t* temp_data = (type_t*)my_recalloc(list->data, RealSizeList(list->capacity + 1, CNT_CANARIES) * sizeof(type_t),
+                                                         RealSizeList(old_capacity + 1, CNT_CANARIES) * sizeof(type_t)); // +1 because list->data[0] is not elem
 
-    type_t* temp_data = (type_t*)my_recalloc(list->data, RealSizeList(list->capacity, CNT_CANARIES) * sizeof(type_t),
-                                                         RealSizeList(old_capacity, CNT_CANARIES) * sizeof(type_t));
-    type_t* temp_next = (type_t*)my_recalloc(list->next, (list->capacity + 1) * sizeof(type_t), old_capacity * sizeof(type_t)); // +1 because list->next[0] == head, not elem
-    type_t* temp_prev = (type_t*)my_recalloc(list->prev, (list->capacity + 1) * sizeof(type_t), old_capacity * sizeof(type_t)); // +1 because list->prev[0] == tail, not elem
+    int* temp_next = (int*)my_recalloc(list->next, (list->capacity + 1) * sizeof(int), 
+                                                   (old_capacity + 1) * sizeof(int)); // +1 because list->next[0] == head, not elem
+
+    int* temp_prev = (int*)my_recalloc(list->prev, (list->capacity + 1) * sizeof(int), 
+                                                   (old_capacity + 1) * sizeof(int)); // +1 because list->prev[0] == tail, not elem
 
     if (temp_data == NULL || temp_next == NULL || temp_prev == NULL) {
         LIST_CHECK_AND_RETURN_ERRORS(NOT_ENOUGH_MEMORY, free(temp_data);
@@ -151,57 +176,59 @@ list_status ListResize(List* list, size_t old_capacity) {
     list->next = temp_next;
     list->prev = temp_prev;
 
-    InitWithPoisons(list->data + OffsetToNewElement(list->size, CNT_CANARIES), list->capacity - list->size);
-    SettingCanariesToEnd(list->data, list->capacity);
-    InitNextPrev(list);
+    InitFreeSpace(list);
+
+    ON_CANARY(SettingCanariesToEnd(list->data, list->capacity));
 
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
     return SUCCESS;
 }
 
-// need delete element from position
-list_status DeleteElement(List* list, size_t position) {
+// need delete element from physical_index
+list_status DeleteElement(List* list, size_t physical_index) {
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
-    list->about_elem.position = position;
-    LIST_CHECK_AND_RETURN_ERRORS(GetElement(list, position, &list->about_elem.value));
+    list->about_elem.physical_index = physical_index;
+    LIST_CHECK_AND_RETURN_ERRORS(GetElement(list, physical_index, &list->about_elem.value));
 
-    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "Before", DUMP_INFO));
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "Before", DUMP_INFO, DELETE));
 
-    if (position > list->capacity)
+    if (physical_index > list->capacity)
         LIST_CHECK_AND_RETURN_ERRORS(INVALID_POSITION);
 
-    if (list->size == 0 || list->prev[position] == -1)
-        LIST_CHECK_AND_RETURN_ERRORS(NOT_EXISTENS_ELEMENT);
+    if (list->size == 0 || list->prev[physical_index] == -1)
+        LIST_CHECK_AND_RETURN_ERRORS(NOT_EXISTING_ELEMENT);
 
-    list->data[position] = DEFAULT_POISON;
+    list->data[physical_index] = DEFAULT_POISON;
 
-    list->next[list->prev[position]] = list->next[position];
-    list->prev[list->next[position]] = list->prev[position];
+    list->next[list->prev[physical_index]] = list->next[physical_index];
+    list->prev[list->next[physical_index]] = list->prev[physical_index];
 
-    list->prev[position] = -1;
-    list->next[position] = (type_t)list->free;
+    list->prev[physical_index] = -1;
+    list->next[physical_index] = (type_t)list->free;
 
-    list->free = position;
+    list->free = physical_index;
 
-    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "After", DUMP_INFO));
+    list->size--;
+
+    LIST_CHECK_AND_RETURN_ERRORS(ListHTMLDump(list, "After", DUMP_INFO, DELETE));
 
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
     return SUCCESS;
 }
 
-list_status GetElement(List* list, size_t position, type_t* elem) {
+list_status GetElement(List* list, size_t physical_index, type_t* elem) {
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list))
 
-    if (position >= list->capacity)
+    if (physical_index >= list->capacity)
         LIST_CHECK_AND_RETURN_ERRORS(INVALID_POSITION);
 
-    if (list->prev[position] == -1)
-        LIST_CHECK_AND_RETURN_ERRORS(NOT_EXISTENS_ELEMENT);
+    if (list->prev[physical_index] == -1)
+        LIST_CHECK_AND_RETURN_ERRORS(NOT_EXISTING_ELEMENT);
 
-    *elem = list->data[position];
+    *elem = list->data[physical_index];
 
     return SUCCESS;
 }
@@ -214,63 +241,67 @@ type_t ListTail(List* list) {
     return list->prev[0];
 }
 
-list_status ListHTMLDump(List* list, const char* type_dump, int line, const char* func, const char* file) {
-    fprintf(list->file, "<pre>\n");
+list_status ListHTMLDump(List* list, const char* type_dump, int line, const char* file, function_name func_name) {
+    fprintf(list->dump_file, "<pre>\n");
 
-    if (strcmp(func, "InsertElement") == 0)
-        fprintf(list->file, "<h3> DUMP <font color=green> %s %s <%d> after position [%zu] </font> </h3>\n",
-                type_dump, func, list->about_elem.value, list->about_elem.position);
-    else if (strcmp(func, "DeleteElement") == 0)
-        fprintf(list->file, "<h3> DUMP <font color=red> %s %s <%d> from position [%zu] </font> </h3>\n",
-                type_dump, func, list->about_elem.value, list->about_elem.position);
+    if (func_name == INSERT)
+        fprintf(list->dump_file, "<h3> DUMP <font color=green> %s Insert <%d> after physical_index [%zu] </font> </h3>\n",
+                type_dump, list->about_elem.value, list->about_elem.physical_index);
+    else if (func_name == DELETE)
+        fprintf(list->dump_file, "<h3> DUMP <font color=red> %s Delete <%d> from physical_index [%zu] </font> </h3>\n",
+                type_dump, list->about_elem.value, list->about_elem.physical_index);
 
-    fprintf(list->file, "List {%s: %d}\n", file, line);
+    fprintf(list->dump_file, "List {%s: %d}\n", file, line);
 
-    fprintf(list->file, "Capacity: %zu\n", list->capacity);
-    fprintf(list->file, "Size: %zu\n", list->size);
-    fprintf(list->file, "Free: %zu\n", list->free);
+    fprintf(list->dump_file, "Capacity: %zu\n", list->capacity);
+    fprintf(list->dump_file, "Size: %zu\n", list->size);
+    fprintf(list->dump_file, "Free: %zu\n", list->free);
 
-    fprintf(list->file, "Indexes |");
+    fprintf(list->dump_file, "Indexes |");
 
-    fprintf(list->file, "    Service    | ");
+    fprintf(list->dump_file, "    Service    | ");
     for (size_t i = 1; i <= list->capacity; ++i) {
-        fprintf(list->file, "%4zu | ", i);
+        fprintf(list->dump_file, "%4zu | ", i);
     }
-    fprintf(list->file, "   Service\n");
+    ON_CANARY(fprintf(list->dump_file, "   Service"));
+    fprintf(list->dump_file, "\n");
 
-    fprintf(list->file, "Data    |");
-    fprintf(list->file, " %4d (Canary) | ", list->data[0]);
+    fprintf(list->dump_file, "Data    |");
+    fprintf(list->dump_file, " %4d (Canary) | ", list->data[0]);
     for (size_t i = 1; i <= list->capacity; ++i) {
-        fprintf(list->file, "%4d | ", list->data[i]);
+        fprintf(list->dump_file, "%4d | ", list->data[i]);
     }
-    fprintf(list->file, "%4d (Canary)\n", list->data[list->capacity + 1]);
+    ON_CANARY(fprintf(list->dump_file, "%4d (Canary)", list->data[list->capacity + 1]));
+    fprintf(list->dump_file, "\n");
 
-    fprintf(list->file, "Next    |");
-    fprintf(list->file, " %4d (Head)   | ", list->next[0]);
+    fprintf(list->dump_file, "Next    |");
+    fprintf(list->dump_file, " %4d (Head)   | ", list->next[0]);
     for (size_t i = 1; i <= list->capacity; ++i) {
-        fprintf(list->file, "%4d | ", list->next[i]);
+        fprintf(list->dump_file, "%4d | ", list->next[i]);
     }
-    fprintf(list->file, "     -     \n");
+    ON_CANARY(fprintf(list->dump_file, "     -     "));
+    fprintf(list->dump_file, "\n");
 
-    fprintf(list->file, "Prev    |");
-    fprintf(list->file, " %4d (Tail)   | ", list->prev[0]);
+    fprintf(list->dump_file, "Prev    |");
+    fprintf(list->dump_file, " %4d (Tail)   | ", list->prev[0]);
     for (size_t i = 1; i <= list->capacity; ++i) {
-        fprintf(list->file, "%4d | ", list->prev[i]);
+        fprintf(list->dump_file, "%4d | ", list->prev[i]);
     }
-    fprintf(list->file, "     -     \n");
+    ON_CANARY(fprintf(list->dump_file, "     -     "));
+    fprintf(list->dump_file, "\n");
 
-    fprintf(list->file, "\n");
+    fprintf(list->dump_file, "\n");
 
     LIST_CHECK_AND_RETURN_ERRORS(GenerateGraph(list));
 
     char command[MAX_LEN_NAME] = {};
-    sprintf(command, "dot %s/graph%d.txt -T png -o %s/image%d.png", list->directory, list->num_dump, list->directory, list->num_dump);
+    snprintf(command, MAX_LEN_NAME, "dot %s/graphes/graph%d.txt -T png -o %s/images/image%d.png", list->directory, list->num_dump, list->directory, list->num_dump);
     if (system((const char*)command) != 0)
-        LIST_CHECK_AND_RETURN_ERRORS(EXECUTION_FAILED,      fprintf(list->file, "Error with create image:(\n"));
+        LIST_CHECK_AND_RETURN_ERRORS(EXECUTION_FAILED,      fprintf(list->dump_file, "Error with create image:(\n"));
 
-    fprintf(list->file, "<img src = %s/image%d.png width = 1200px>", list->directory, list->num_dump);
+    fprintf(list->dump_file, "<img src = %s/images/image%d.png width = 1200px>", list->directory, list->num_dump);
 
-    fprintf(list->file, "\n");
+    fprintf(list->dump_file, "\n");
 
     list->num_dump++;
 
@@ -281,67 +312,67 @@ list_status GenerateGraph(List* list) {
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
 
     char filename_graph[MAX_LEN_NAME] = {};
-    sprintf(filename_graph, "%s/graph%d.txt", list->directory, list->num_dump);
+    snprintf(filename_graph, MAX_LEN_NAME, "%s/graphes/graph%d.txt", list->directory, list->num_dump);
 
     FILE* graph = fopen(filename_graph, "w");
     if (graph == NULL)
         LIST_CHECK_AND_RETURN_ERRORS(OPEN_ERROR);
 
     fprintf(graph, "digraph {\n");
-    fprintf(graph, "    rankdir = LR;\n");
     fprintf(graph, "    splines=ortho;\n");
-    fprintf(graph, "    nodesep=0.5;\n");
 
-    fprintf(graph, "    node0 [shape = Mrecord; style = filled; fillcolor = \"#00FFFF\"; label = \"canary = %d | head = %d | tail = %d\"];\n",
+    fprintf(graph, "    node0 [shape = Mrecord; style = filled; fillcolor = \"#00FFFF\"; label = \"{canary = %d | head = %d | tail = %d}\"];\n",
                     list->data[0], list->next[0], list->prev[0]);
 
-    for (size_t i = 1; i <= (size_t)list->capacity; ++i) {
+    for (size_t i = 1; i <= list->capacity; ++i) {
         if ((list->next[i] == 0 && list->prev[i] != -1))
-            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <data = %d | <FONT COLOR=\"Blue\">next = %d </FONT> | prev = %d>];\n",
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <{data = %d | <FONT COLOR=\"Blue\">next = %d </FONT> | prev = %d}>];\n",
                     i, list->data[i], list->next[i], list->prev[i]);
         else if (list->prev[i] == 0)
-            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <data = %d |next = %d |  <FONT COLOR=\"Red\">prev = %d</FONT>>];\n",
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = <{data = %d |next = %d |  <FONT COLOR=\"Red\">prev = %d</FONT>}>];\n",
                     i, list->data[i], list->next[i], list->prev[i]);
         else if (list->prev[i] != -1)
-            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = \"data = %d | next = %d | prev = %d\"];\n",
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#99FF99\"; label = \"{data = %d | next = %d | prev = %d}\"];\n",
                     i, list->data[i], list->next[i], list->prev[i]);
         else
-            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#9999FF\"; label = \"data = %d | next = %d | prev = %d\"];\n",
+            fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#9999FF\"; label = \"{data = %d | next = %d | prev = %d}\"];\n",
                     i, list->data[i], list->next[i], list->prev[i]);
     }
 
-    fprintf(graph, "    node%zu [shape = Mrecord; style = filled; fillcolor = \"#00FFFF\"; label = \"canary = %d\"];\n",
-                    list->capacity + 1, list->data[list->capacity + 1]);
-
-    for (size_t i = 0; i < RealSizeList(list->capacity, CNT_CANARIES) - 1; ++i) {
-        fprintf(graph, "    node%zu -> node%zu [style = invis];\n", i, i + 1);
+    fprintf(graph, "    {rank = same; ");
+    for (size_t i = 0; i <= list->capacity - 1; ++i) {
+        fprintf(graph, "node%zu ", i);
     }
+    fprintf(graph, "node%zu};\n", list->capacity);
+
+    fprintf(graph, "    ");
+    for (size_t i = 0; i <= list->capacity - 1; ++i) {
+        fprintf(graph, "node%zu -> ", i);
+    }
+    fprintf(graph, "node%zu [style = invis];\n", list->capacity);
+
 
     for (type_t i = 0; list->next[i] != 0; i = list->next[i]) {
-        fprintf(graph, "    node%d -> node%d [constraint=false, color = blue, arrowhead = vee];\n", i, list->next[i]);
+        fprintf(graph, "    node%d -> node%d [color = blue, arrowhead = vee];\n", i, list->next[i]);
     }
-    fprintf(graph, "    node%d -> node0 [constraint=false, color = blue, arrowhead = vee];\n", list->prev[0]);
+    fprintf(graph, "    node%d -> node0 [color = blue, arrowhead = vee];\n", list->prev[0]);
 
     for (type_t i = 0; list->prev[i] != 0; i = list->prev[i]) {
-        fprintf(graph, "    node%d -> node%d [constraint=false, color = red, arrowhead = vee];\n", i, list->prev[i]);
+        fprintf(graph, "    node%d -> node%d [color = red, arrowhead = vee];\n", i, list->prev[i]);
     }
-    fprintf(graph, "    node%d -> node0 [constraint=false, color = red, arrowhead = vee];\n", list->next[0]);
+    fprintf(graph, "    node%d -> node0 [color = red, arrowhead = vee];\n", list->next[0]);
 
     for (type_t i = (type_t)list->free; list->next[i] != 0; i = list->next[i]) {
-        fprintf(graph, "    node%d -> node%d [constraint=false, color = purple, arrowhead = vee];\n", i, list->next[i]);
+        fprintf(graph, "    node%d -> node%d [color = purple, arrowhead = vee];\n", i, list->next[i]);
     }
 
     fprintf(graph, "    node_head [shape = component, style = filled; fillcolor = \"#FFFF99\"; label = \"Head\"];\n");
-    fprintf(graph, "    {rank = same; node_head; node%d;}\n", list->next[0]);
-    fprintf(graph, "    node_head -> node%d [constraint=false, color = orange, arrowhead = vee];\n", list->next[0]);
-
     fprintf(graph, "    node_tail [shape = component, style = filled; fillcolor = \"#FFFF99\"; label = \"Tail\"];\n");
-    fprintf(graph, "    {rank = same; node_tail; node%d;}\n", list->prev[0]);
-    fprintf(graph, "    node_tail -> node%d [constraint=false, color = orange, arrowhead = vee];\n", list->prev[0]);
-
     fprintf(graph, "    node_free [shape = component, style = filled; fillcolor = \"#FFFF99\"; label = \"Free\"];\n");
-    fprintf(graph, "    {rank = same; node_free; node%zu;}\n", list->free);
-    fprintf(graph, "    node_free -> node%zu [constraint=false, color = orange, arrowhead = vee];\n", list->free);
+
+    fprintf(graph, "    node_head -> node%d [color = orange, arrowhead = vee];\n", list->next[0]);
+    fprintf(graph, "    node_tail -> node%d [color = orange, arrowhead = vee];\n", list->prev[0]);
+    fprintf(graph, "    node_free -> node%zu [color = orange, arrowhead = vee];\n", list->free);
 
     fprintf(graph, "}");
 
@@ -359,7 +390,7 @@ list_status ListDtor(List* list) {
     free(list->next);
     free(list->prev);
 
-    if (fclose(list->file) == EOF) {
+    if (fclose(list->dump_file) == EOF) {
         LIST_CHECK_AND_RETURN_ERRORS(CLOSE_ERROR,    perror("Error is:"));
     }
 

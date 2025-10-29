@@ -6,7 +6,20 @@
 #include "list.h"
 
 
-const int CANARY = 0XEDA; // TODO: what if type_t is not an integer type?
+#ifdef CANARIES
+const size_t CNT_CANARIES = 2;
+#else
+const size_t CNT_CANARIES = 0;
+#endif // _CANARY
+
+#ifdef CANARIES
+#define ON_CANARY(...) __VA_ARGS__
+#else // NOT CANARIES
+#define ON_CANARY(...)
+#endif // CANARIES
+
+
+const int CANARY = 0XEDA;
 
 
 void SettingCanariesToBegin(type_t* ptr);

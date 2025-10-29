@@ -3,20 +3,19 @@
 
 #include <stdio.h>
 
-#define LIST_CHECK_AND_RETURN_ERRORS(error, ...)     \
-        if (error != SUCCESS) {                       \
-            fprintf(stderr, "Error is: %d\n", error);\
-            __VA_ARGS__;                             \
-            return error;                            \
+#define LIST_CHECK_AND_RETURN_ERRORS(error, ...)                   \
+        if (error != SUCCESS) {                                    \
+            fprintf(stderr, "Error is: %d, %d\n", error, __LINE__);\
+            __VA_ARGS__;                                           \
+            return error;                                          \
         }
 
-#define DUMP_INFO __LINE__, __func__, __FILE__
+#define DUMP_INFO __LINE__, __FILE__
 
 const int START_CAPACITY = 8;
 const int MAX_CAPACITY   = 1e9;
 const int MAX_LEN_NAME   = 100;
 const int REALLOC_COEFF  = 2;
-const int CNT_CANARIES   = 2;
 const int DEFAULT_POISON = 0XDED;
 
 
@@ -24,20 +23,20 @@ typedef int type_t;
 
 struct About_elem {
     type_t value;
-    size_t position;
+    size_t physical_index;
 };
 
 struct List {
     type_t* data;
     size_t free;
-    type_t* next;
-    type_t* prev;
+    int* next;
+    int* prev;
     size_t size;
     size_t capacity;
-    FILE* file;
+    FILE* dump_file;
     const char* directory;
     int num_dump;
-    About_elem about_elem;
+    About_elem about_elem; // FIXME
 };
 
 
@@ -51,7 +50,7 @@ enum list_status {
     INVALIDE_FREE             = 1 << 5,
     INVALIDE_HEAD             = 1 << 6,
     INVALIDE_TAIL             = 1 << 7,
-    NOT_EXISTENS_ELEMENT      = 1 << 8,
+    NOT_EXISTING_ELEMENT      = 1 << 8,
     NOT_ENOUGH_MEMORY         = 1 << 9,
     OPEN_ERROR                = 1 << 10,
     INVALID_POSITION          = 1 << 11,
@@ -60,29 +59,35 @@ enum list_status {
     NULL_POITER_ON_DUMP_FILE  = 1 << 14,
     CAPACITY_IS_TOO_BIG       = 1 << 15,
     CORRUPTED_CANARY          = 1 << 16,
-    LIST_DATA_POISON          = 1 << 17
+    LIST_DATA_POISON          = 1 << 17,
+    LIST_HAS_CYCLE            = 1 << 18
+};
+
+enum function_name {
+    INSERT = 0,
+    DELETE = 1
 };
 
 
 list_status ListCtor(List* list, const char* dump_filename, const char* directory);
 
-void InitNextPrev(List* list);
+void InitFreeSpace(List* list);
 
 list_status ListVerify(List* list);
 
-list_status InsertElement(List* list, type_t elem, size_t position);
+list_status InsertElement(List* list, type_t elem, size_t physical_index);
 
 list_status ListResize(List* list, size_t old_capacity);
 
-list_status DeleteElement(List* list, size_t position);
+list_status DeleteElement(List* list, size_t physical_index);
  
-list_status GetElement(List* list, size_t position, type_t* elem);
+list_status GetElement(List* list, size_t physical_index, type_t* elem);
 
 type_t ListHead(List* list);
 
 type_t ListTail(List* list);
 
-list_status ListHTMLDump(List* list, const char* type_dump, int line, const char* func, const char* file);
+list_status ListHTMLDump(List* list, const char* type_dump, int line, const char* file, function_name func_name);
 
 list_status GenerateGraph(List* list);
 
