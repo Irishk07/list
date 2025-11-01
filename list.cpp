@@ -20,7 +20,6 @@ list_status ListCtor(List* list, const char* dump_filename, const char* director
     list->num_dump = 0;
     list->directory = directory;
 
-    // TODO prev and next are indexes, not type_t
     list->data = (type_t*)calloc(RealSizeList(list->capacity + 1, CNT_CANARIES), sizeof(type_t)); // +1 because list->data[0] is not elem
     list->next = (int*)calloc(list->capacity + 1, sizeof(int)); // +1 because list->next[0] == head, not elem
     list->prev = (int*)calloc(list->capacity + 1, sizeof(int)); // +1 because list->prev[0] == tail, not elem
@@ -305,17 +304,19 @@ type_t ListTail(List* list) {
     return list->prev[0];
 }
 
-list_status ListHTMLDump(List* list, About_elem about_elem, const char* before_or_after, int line, const char* file, type_of_dump type_dump, list_status status) {
+list_status ListHTMLDump(List* list, About_elem about_elem, const char* information, int line, const char* file, type_of_dump type_dump, list_status status) {
     if (status == NULL_POITER_ON_DUMP_FILE) {
         return status;
     }
 
-    fprintf(list->dump_file, "<pre>\n <font size = \"6\">\n");
+    fprintf(list->dump_file, "<pre> <font size = \"6\">\n");
 
     if (type_dump == ERROR_DUMP) {
         fprintf(list->dump_file, "<h2> ERROR ERROR ERROR </h2>\n");
 
-        fprintf(list->dump_file, "<h3><font color=red> ");
+        if (information != NULL)
+            fprintf(list->dump_file, "<h3>DUMP <font color=red> %s\n", information);
+
         PrintErrors(status, list->dump_file);
         fprintf(list->dump_file, "</font></h3>\n");
     }
@@ -329,13 +330,13 @@ list_status ListHTMLDump(List* list, About_elem about_elem, const char* before_o
 
     if (type_dump == INSERT_AFTER)
         fprintf(list->dump_file, "<h3> DUMP <font color=green> %s Insert <%d> after physical_index [%zu] </font> </h3>\n",
-                before_or_after, about_elem.value, about_elem.physical_index);
+                information, about_elem.value, about_elem.physical_index);
     else if (type_dump == INSERT_BEFORE)
         fprintf(list->dump_file, "<h3> DUMP <font color=green> %s Insert <%d> before physical_index [%zu] </font> </h3>\n",
-                before_or_after, about_elem.value, about_elem.physical_index);
+                information, about_elem.value, about_elem.physical_index);
     else if (type_dump == DELETE)
         fprintf(list->dump_file, "<h3> DUMP <font color=red> %s Delete <%d> from physical_index [%zu] </font> </h3>\n",
-                before_or_after, about_elem.value, about_elem.physical_index);
+                information, about_elem.value, about_elem.physical_index);
 
     fprintf(list->dump_file, "List {%s: %d}\n", file, line);
 
@@ -389,11 +390,11 @@ list_status ListHTMLDump(List* list, About_elem about_elem, const char* before_o
 
     fprintf(list->dump_file, "\n\n");
 
-    fprintf(list->dump_file, "Meow <3\n\n");
+    // fprintf(list->dump_file, "Meow <3\n\n");
 
-    fprintf(list->dump_file, "<img src = cat.png width = 150px> </font>");
+    // fprintf(list->dump_file, "<img src = cat.png width = 150px> </font>");
 
-    fprintf(list->dump_file, "\n\n");
+    // fprintf(list->dump_file, "\n\n");
 
     list->num_dump++;
 

@@ -4,3 +4,4 @@ dump1/
 tests/
 *.html
 dump2/
+.vscode

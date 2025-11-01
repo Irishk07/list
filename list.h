@@ -111,7 +111,7 @@ type_t ListHead(List* list);
 
 type_t ListTail(List* list);
 
-list_status ListHTMLDump(List* list, About_elem about_elem, const char* before_or_after, int line, const char* file, type_of_dump type_dump, list_status status);
+list_status ListHTMLDump(List* list, About_elem about_elem, const char* information, int line, const char* file, type_of_dump type_dump, list_status status);
 
 list_status GenerateGraph(List* list);
 
