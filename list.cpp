@@ -217,37 +217,6 @@ list_status InsertElementAfterNoDump(List* list, type_t elem, size_t physical_in
     return SUCCESS;
 }
 
-list_status ListResize(List* list, size_t old_capacity) {
-    assert(list);
-
-    type_t* temp_data = (type_t*)my_recalloc(list->data, RealSizeList(list->capacity + 1, CNT_CANARIES) * sizeof(type_t),
-                                                         RealSizeList(old_capacity + 1, CNT_CANARIES) * sizeof(type_t)); // +1 because list->data[0] is not elem
-
-    int* temp_next = (int*)my_recalloc(list->next, (list->capacity + 1) * sizeof(int),
-                                                   (old_capacity + 1) * sizeof(int)); // +1 because list->next[0] == head, not elem
-
-    int* temp_prev = (int*)my_recalloc(list->prev, (list->capacity + 1) * sizeof(int),
-                                                   (old_capacity + 1) * sizeof(int)); // +1 because list->prev[0] == tail, not elem
-
-    if (temp_data == NULL || temp_next == NULL || temp_prev == NULL) {
-        LIST_CHECK_AND_RETURN_ERRORS(NOT_ENOUGH_MEMORY, free(temp_data);
-                                                        free(temp_next);
-                                                        free(temp_prev));
-    }
-
-    list->data = temp_data;
-    list->next = temp_next;
-    list->prev = temp_prev;
-
-    InitFreeSpace(list);
-
-    ON_CANARY(SettingCanariesToEnd(list->data, list->capacity));
-
-    LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
-
-    return SUCCESS;
-}
-
 // need delete element from physical_index
 list_status DeleteElement(List* list, size_t physical_index) {
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
@@ -282,6 +251,37 @@ list_status DeleteElement(List* list, size_t physical_index) {
     return SUCCESS;
 }
 
+list_status ListResize(List* list, size_t old_capacity) {
+    assert(list);
+
+    type_t* temp_data = (type_t*)my_recalloc(list->data, RealSizeList(list->capacity + 1, CNT_CANARIES) * sizeof(type_t),
+                                                         RealSizeList(old_capacity + 1, CNT_CANARIES) * sizeof(type_t)); // +1 because list->data[0] is not elem
+
+    int* temp_next = (int*)my_recalloc(list->next, (list->capacity + 1) * sizeof(int),
+                                                   (old_capacity + 1) * sizeof(int)); // +1 because list->next[0] == head, not elem
+
+    int* temp_prev = (int*)my_recalloc(list->prev, (list->capacity + 1) * sizeof(int),
+                                                   (old_capacity + 1) * sizeof(int)); // +1 because list->prev[0] == tail, not elem
+
+    if (temp_data == NULL || temp_next == NULL || temp_prev == NULL) {
+        LIST_CHECK_AND_RETURN_ERRORS(NOT_ENOUGH_MEMORY, free(temp_data);
+                                                        free(temp_next);
+                                                        free(temp_prev));
+    }
+
+    list->data = temp_data;
+    list->next = temp_next;
+    list->prev = temp_prev;
+
+    InitFreeSpace(list);
+
+    ON_CANARY(SettingCanariesToEnd(list->data, list->capacity));
+
+    LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
+
+    return SUCCESS;
+}
+
 list_status GetElement(List* list, size_t physical_index, type_t* elem) {
     LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list))
 
@@ -304,6 +304,54 @@ type_t ListTail(List* list) {
     return list->prev[0];
 }
 
+list_status Linearization(List* list) {
+    LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
+
+    type_t* new_data = (type_t*)calloc(RealSizeList(list->capacity + 1, CNT_CANARIES), sizeof(type_t)); // +1 because list->data[0] is not elem
+    int* new_next = (int*)calloc(list->capacity + 1, sizeof(int)); // +1 because list->next[0] == head, not elem
+    int* new_prev = (int*)calloc(list->capacity + 1, sizeof(int)); // +1 because list->prev[0] == tail, not elem
+
+    if (new_data == NULL || new_next == NULL || new_prev == NULL)
+        LIST_CHECK_AND_RETURN_ERRORS(NOT_ENOUGH_MEMORY,     free(new_data);
+                                                            free(new_next);
+                                                            free(new_prev);)
+
+    int idx = 1;
+    for (int i = ListHead(list); list->next[i] != 0; i = list->next[i])
+        new_data[idx++] = list->data[i];
+    new_data[idx] = list->data[ListTail(list)];
+
+    for(int i = 1; i <= (int)list->size; ++i) {
+        new_next[i] = i + 1;
+        new_prev[i] = i - 1;
+    }
+
+    new_next[0] = 1; // head
+    new_prev[0] = (int)list->size; //tail
+    new_next[list->size] = 0; // next of last element
+
+    list->free = list->size + 1; // free
+
+    free(list->data);
+    free(list->next);
+    free(list->prev);
+
+    list->data = new_data;
+    list->next = new_next;
+    list->prev = new_prev;
+
+    InitFreeSpace(list);
+
+    ON_CANARY(
+        SettingCanariesToBegin(list->data);
+        SettingCanariesToEnd(list->data, list->capacity);
+    )
+
+    LIST_CHECK_AND_RETURN_ERRORS(ListVerify(list));
+
+    return SUCCESS;
+}
+
 list_status ListHTMLDump(List* list, About_elem about_elem, const char* information, int line, const char* file, type_of_dump type_dump, list_status status) {
     if (status == NULL_POITER_ON_DUMP_FILE) {
         return status;
@@ -315,7 +363,7 @@ list_status ListHTMLDump(List* list, About_elem about_elem, const char* informat
         fprintf(list->dump_file, "<h2> ERROR ERROR ERROR </h2>\n");
 
         if (information != NULL)
-            fprintf(list->dump_file, "<h3>DUMP <font color=red> %s\n", information);
+            fprintf(list->dump_file, "<h3> DUMP <font color=red> %s\n", information);
 
         PrintErrors(status, list->dump_file);
         fprintf(list->dump_file, "</font></h3>\n");
@@ -334,6 +382,8 @@ list_status ListHTMLDump(List* list, About_elem about_elem, const char* informat
     else if (type_dump == INSERT_BEFORE)
         fprintf(list->dump_file, "<h3> DUMP <font color=green> %s Insert <%d> before physical_index [%zu] </font> </h3>\n",
                 information, about_elem.value, about_elem.physical_index);
+    else if (type_dump == JUST_DUMP)
+        fprintf(list->dump_file, "<h3> DUMP <font color=green> %s </font> </h3>\n", information);
     else if (type_dump == DELETE)
         fprintf(list->dump_file, "<h3> DUMP <font color=red> %s Delete <%d> from physical_index [%zu] </font> </h3>\n",
                 information, about_elem.value, about_elem.physical_index);

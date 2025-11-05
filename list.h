@@ -46,6 +46,7 @@ struct List {
     FILE* dump_file;
     const char* directory;
     int num_dump;
+    int last_physical_index;
 };
 
 
@@ -85,7 +86,8 @@ enum type_of_dump {
     INSERT_AFTER  = 0,
     DELETE        = 1,
     INSERT_BEFORE = 2,
-    ERROR_DUMP    = 3
+    ERROR_DUMP    = 3,
+    JUST_DUMP     = 4
 };
 
 
@@ -110,6 +112,8 @@ list_status GetElement(List* list, size_t physical_index, type_t* elem);
 type_t ListHead(List* list);
 
 type_t ListTail(List* list);
+
+list_status Linearization(List* list);
 
 list_status ListHTMLDump(List* list, About_elem about_elem, const char* information, int line, const char* file, type_of_dump type_dump, list_status status);
 
